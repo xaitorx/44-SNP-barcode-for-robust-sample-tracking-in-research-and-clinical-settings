@@ -188,7 +188,7 @@ VCF_panel_NAGENDATA_short <- VCF_panel_NAGENDATA_x[,-c(3,6,7,8,9)]
 
 ##### 
 ### qPCR Genotyping ###
-Genotype_Matrix <- read.csv("data/Genotype Matrix Navarra.csv", sep=";")
+Genotype_Matrix <- read.csv("data/Genotype_qPCR.csv", sep=";")
 assays_fail <- c("EIF4ENIF1", "ZNRF3", "18s")
 
 # remove assays fail
