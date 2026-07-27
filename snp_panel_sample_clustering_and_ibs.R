@@ -127,7 +127,7 @@ pdf("plots/heatmap_GT.pdf", width = 14, height = 12)
 print(p3)         
 dev.off()
 
-# ---- 4. IBS correlation plot ----
+# ---- 4. WGS IBS correlation plot ----
 table_012_short <- as.data.frame(table_012[,6:156])
 
 # initialize matrix
@@ -145,18 +145,22 @@ for (i in 1:ncol(table_012_short)) {
 
 # plot correlation matrix with clustering
 # Basic heatmap with clustering
-col_fun = colorRamp2(c(0,0.65, 1), c("blue","white", "red"))
+col_pal <- colorRampPalette(c("blue","white","red"))(100)
+
+# WGS IBS values
+melted_pct_match_WGS <- reshape2::melt(as.matrix(IBS_dist_table))
 
 p1 <- pheatmap(
   as.matrix(IBS_dist_table),
-  col = col_fun,
+  col = col_pal,
   column_title="Identity by state correlation",
   name = "Relatedness",
   cluster_rows = FALSE,
   cluster_cols = FALSE,
   show_rownames  = FALSE,
   show_colnames  = FALSE,
-  treeheight_row = 0, treeheight_col = 0
+  treeheight_row = 0, treeheight_col = 0,
+  main = "IBS Distance (WGS only)"
 )
 
 # histogram of IBS values
@@ -186,7 +190,6 @@ VCF_panel_NAGENDATA_x[,10:ncol(VCF_panel_NAGENDATA_x)] <- lapply(VCF_panel_NAGEN
 VCF_panel_NAGENDATA_x[,10:ncol(VCF_panel_NAGENDATA_x)] <- lapply(VCF_panel_NAGENDATA_x[,10:ncol(VCF_panel_NAGENDATA_x)], gsub, pattern = "\\.", replacement = "0")
 VCF_panel_NAGENDATA_short <- VCF_panel_NAGENDATA_x[,-c(3,6,7,8,9)]
 
-##### 
 ### qPCR Genotyping ###
 Genotype_Matrix <- read.csv("data/Genotype_qPCR.csv", sep=";")
 assays_fail <- c("EIF4ENIF1", "ZNRF3", "18s")
@@ -211,19 +214,42 @@ VCF_panel_NAGENDATA[,10:ncol(VCF_panel_NAGENDATA)] <- lapply(VCF_panel_NAGENDATA
 # load data
 SNP_panel_table <- read.csv2("data/SNP_panel_final.txt")
 
-##### 
+#
 VCF_panel_NAGENDATA <- VCF_panel_NAGENDATA[,-c(3,6,7,8,9)]
 VCF_panel_NAGENDATA <- merge(VCF_panel_NAGENDATA, SNP_panel_table[,c(1,3,5,15)], by.x=1:2 , by.y=2:3)
 
+# format sexual chromosomes
+# only fix based on rows 46:47, but fix only those 2 rows
+VCF_panel_NAGENDATA[VCF_panel_NAGENDATA[,1] == "chrX",5:ncol(VCF_panel_NAGENDATA)] <- lapply(
+  VCF_panel_NAGENDATA[VCF_panel_NAGENDATA[,1] == "chrX",5:ncol(VCF_panel_NAGENDATA)], function(x) {
+    x <- as.character(x)
+    if(any(!grepl("/", x, fixed = TRUE))) {
+      sub("/.*", "", x) # keep 1st allele. Use sub(".*/", "", x) to keep 2nd allele
+    } else {
+      x
+    }
+  }
+)
+
 #
-VCF_panel_formated <- as.data.frame(t(VCF_panel_NAGENDATA[,3:151]))
+VCF_panel_NAGENDATA[] <- lapply(VCF_panel_NAGENDATA, function(x){
+  if(is.character(x) || is.factor(x)){
+    gsub("|", "/", x, fixed = TRUE)
+  } else {
+    x
+  }
+})
+
+#
+VCF_panel_formated <- as.data.frame(t(VCF_panel_NAGENDATA[,5:155]))
 colnames(VCF_panel_formated) <- VCF_panel_NAGENDATA$rs_id
 
 # samples ?
-row.names(VCF_panel_formated)[!(row.names(VCF_panel_formated) %in% Genotype_Matrix_clean$`Sample.Assay`)]
+row.names(VCF_panel_formated)[!(row.names(VCF_panel_formated) %in% Genotype_Matrix_clean$Sample)]
 
 #
-VCF_panel_formated_xx <- VCF_panel_formated[Genotype_Matrix_clean$`Sample.Assay`,]
+VCF_panel_formated_xx <- VCF_panel_formated[Genotype_Matrix_clean$Sample,]
+VCF_panel_NAGENDATA$SYMBOL <- gsub("/", "|", VCF_panel_NAGENDATA$SYMBOL)
 
 #
 colnames(Genotype_Matrix_clean) <- c("Sample","ARID4A ","PPP1R1A | PDE1B","MEFV","RECQL4","COL4A2","PON3","NKX2-3","CYP24A1","VCAN | VCAN-AS1", "MYH7|MYH6", "PSCA", "GLP1R", "TDRD7", "CFLAR", "CNR2", "ALDH4A1", "GRM7", "TRPV3", "PLXNB3 | SRPK3", "| EXOSC3", "PKD1L1", "LTBP1", "PZP", "MUC5B", "EYS", "MYT1 | NPBWR2", "IRS2", "GPAM", "ETS1", "| ERAP2", "GABRA5", "MAGEB18 | ", "SLC26A1 | IDUA", "TSHZ1", "PYCR1 | MYADML2", "MYH14", "UTY", "MCM3AP", "OCA2", "DCC", "SHROOM3 | SHROOM3-AS1", "| PARL", "NDE1 | MYH11", "ZNF480 |", "RIPK4")
@@ -267,11 +293,21 @@ colnames(qpcr_mask_table) <- Genotype_Matrix_clean$`Sample/Assay`
 wgs_mask_table <- as.data.frame(do.call("rbind", wgs_mask))
 colnames(wgs_mask_table) <- Genotype_Matrix_clean$`Sample/Assay`
 
-# match entre muestras!!!
+# 5. WGS vs qPCR IBS ---- 
+## --- match entre muestras!!! ----
 qpcr_match <- list()
 for (i in 1:ncol(qpcr_mask_table)) {
   profile_qPCR <- qpcr_mask_table[,i]
-  qpcr_match[[i]] <- colMeans(as.matrix(wgs_mask_table) == profile_qPCR, na.rm = TRUE)
+  wgs_mat <- as.matrix(wgs_mask_table)
+  # same genotype at each locus
+  same_geno <- (wgs_mat == profile_qPCR)
+  # one is HET and the other is not (and they differ) -> partial sharing
+  one_het   <- ((wgs_mat == "HET") | (profile_qPCR == "HET")) & !same_geno
+  # IBS per locus: 1 if identical, 0.5 if one is het, 0 if opposite homozygotes
+  ibs_loci  <- ifelse(same_geno, 1, ifelse(one_het, 0.5, 0))
+  # exclude loci where either call is NA (pairwise, as before)
+  ibs_loci[is.na(wgs_mat) | is.na(profile_qPCR)] <- NA
+  qpcr_match[[i]] <- colMeans(ibs_loci, na.rm = TRUE)
 }
 
 #
@@ -279,15 +315,19 @@ pct_match_table <- as.data.frame(do.call("rbind", qpcr_match))
 
 # histogram of IBS values
 melted_pct_match <- reshape2::melt(as.matrix(pct_match_table))
-concordance_match <- melted_pct_match[melted_pct_match$Var1 == melted_pct_match$Var2,]
+concordance_match <- melted_pct_match[melted_pct_match$Var1 == gsub("V", "",melted_pct_match$Var2),]
 
-### match por assay
-# match entre muestras!!!
+## --- match por assay ----
 assay_match <- list()
 for (i in 1:nrow(qpcr_mask_table)) {
   assay_qPCR <- unlist(qpcr_mask_table[i,])
   wgs_marker <- unlist(wgs_mask_table[i,])
-  assay_match[[row.names(qpcr_mask_table)[i]]] <- mean(assay_qPCR == wgs_marker, na.rm = TRUE)
+  # same genotype (incl. both HET) -> 1; one HET -> 0.5; opposite homs -> 0
+  same_geno <- (assay_qPCR == wgs_marker)
+  one_het   <- ((assay_qPCR == "HET") | (wgs_marker == "HET")) & !same_geno
+  ibs_loci  <- ifelse(same_geno, 1, ifelse(one_het, 0.5, 0))
+  ibs_loci[is.na(assay_qPCR) | is.na(wgs_marker)] <- NA
+  assay_match[[row.names(qpcr_mask_table)[i]]] <- mean(ibs_loci, na.rm = TRUE)
 }
 
 #
@@ -297,10 +337,30 @@ assay_match_table <- data.frame(names(assay_match),do.call("rbind", assay_match)
 assay_match_table <- assay_match_table[order(assay_match_table$do.call..rbind...assay_match.),]
 assay_match_table$names.assay_match. <- factor(assay_match_table$names.assay_match., levels = assay_match_table$names.assay_match.)
 
-#
-p3 <- ggplot(assay_match_table, aes(x=do.call..rbind...assay_match.)) + 
+## --- Plot 3 - qPCR vs NGS IBS ----
+p3 <- ggplot(assay_match_table, aes(x=do.call..rbind...assay_match.)) +
   geom_histogram(fill="#69b3a2", color="#e9ecef", alpha=0.9, binwidth = 0.01) +
-  theme_minimal() + labs(x="qPCR vs NGS concordance", y="Assay count")
+  theme_minimal() + labs(x="Self IBS Distance (qPCR vs WGS)", y="Assay count")
+
+# "qPCR vs NGS IBS" with proposed CUTOFFS
+ggplot(melted_pct_match, aes(x=value)) +
+  geom_histogram(fill="#69b3a2", color="#e9ecef", alpha=0.9, binwidth = 0.02) +
+  scale_y_log10(
+    labels = scales::label_comma(),
+    limits = c(1, 5000),
+    expand = c(0, 0),
+    oob = scales::squish
+  ) +
+  theme_minimal() + 
+  labs(x="IBS distance (qPCR vs NGS)", y="Count") +
+  geom_vline(xintercept = 0.90, linewidth=1, linetype = "dashed", color = "red3", alpha = 0.5) +
+  geom_vline(xintercept = 0.85, linewidth=1, linetype = "dashed", color = "red4", alpha = 0.5) +
+  # labels - assuming higher value = more similar
+  annotate("text", x = 0.40, y = 1250, label = "Exclusion", fontface = "bold", size = 5, angle = 90, vjust = 0.5) +
+  annotate("text", x = 0.875, y = 1000, label = "Inconclusive", fontface = "bold", size = 5, angle = 90, vjust = 0.5) +
+  annotate("text", x = 0.95, y = 1500, label = "Inclusion", fontface = "bold", size = 5, angle = 90, vjust = 0.5) +
+  annotate("rect", xmin = 0.85, xmax = 0.90, ymin = 1, ymax = 5000, fill = "orange", alpha = 0.1) +
+  annotate("rect", xmin = 0.90, xmax = Inf, ymin = 1, ymax = 5000, fill = "red3", alpha = 0.1)
 
 # genotyping success
 geno_success <- data.frame(rs_id =row.names(qpcr_mask_table)  ,success = 1-(rowSums(is.na(qpcr_mask_table)) / ncol(qpcr_mask_table)))
@@ -308,23 +368,27 @@ geno_success <- data.frame(rs_id =row.names(qpcr_mask_table)  ,success = 1-(rowS
 #
 p4 <- ggplot(geno_success, aes(x=success)) + 
   geom_histogram(fill="#69b3a2", color="#e9ecef", alpha=0.9, binwidth = 0.01) +
-  theme_minimal() + labs(x="genotyping success", y="Assay count")
+  theme_minimal() + labs(x="Call rate (genotyping success)", y="Assay count")
 
 
 assay_match_table <- as.data.frame(assay_match_table[order(assay_match_table[,2], decreasing = TRUE),])
 
 # plot as correlation matrix
-col_fun = colorRamp2(c(0,0.65, 1), c("blue","white", "red"))
+col_pal <- colorRampPalette(c("blue","white","red"))(100)
 
+# ============================================================================
+# CHANGED: Panel B heatmap title "qPCR vs WGS correlation" -> "qPCR vs WGS IBS"
+# and legend name "Correlation" -> "IBS" (the matrix now contains IBS values)
+# ============================================================================
 p5 <- pheatmap(
   as.matrix(pct_match_table),
-  col = col_fun,
-  name = "Correlation",
+  col = col_pal,
+  name = "IBS",
   cluster_rows = FALSE,
   cluster_cols = FALSE,
   show_rownames  = FALSE,
   show_colnames  = FALSE,
-  column_title = "qPCR vs WGS correlation"
+  main = "IBS Distance (qPCR vs WGS)"
 )
 
 p5x <- as.ggplot(p5)

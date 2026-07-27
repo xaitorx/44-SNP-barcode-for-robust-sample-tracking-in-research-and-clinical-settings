@@ -34,7 +34,6 @@ source_dir <- "./data/"
 plot_dir <- "./plots"
 tables_dir <- "./tables"
 
-
 # ---- 2. LOAD & PREPARE SNP PANEL DATA ----
 # Load final SNP panel table (ensure path matches your local setup)
 SNP_panel_table <- read.csv2("data/SNP_panel_final.txt")
@@ -133,6 +132,8 @@ for (i in seq_len(nrow(SNP_panel_table))) {
   summary_table[,c("Alt Allele","Ref HMOZ","Alt HMOZ","HTRZ")] <- lapply(summary_table[,c("Alt Allele","Ref HMOZ","Alt HMOZ","HTRZ")], round, 3)
   # ALPHA total
   ALFA_Total = summary_table$`Alt Allele`[summary_table$Population == "Total"]
+  #ALFA total Heterozigosity
+  ALFA_HTRZ = summary_table$HTRZ[summary_table$Population == "Total"]
   # subset European, African, East Asian, South Asian, Latam
   summary_table <- summary_table[summary_table$Population %in% c("Total","European", "African", "East Asian", "South Asian", "Latin American"),]
   # min MAF
@@ -170,7 +171,7 @@ for (i in seq_len(nrow(SNP_panel_table))) {
     (summary_table$`Alt HMOZ`[summary_table$Population == "Latin American"])^2 + 
     (summary_table$HTRZ[summary_table$Population == "Latin American"])^2
   #
-  freqs_varios[[i]] <- c("ALFA_Total"=ALFA_Total, "ALFA_min"=ALFA_min, "ALFA_max"=ALFA_max, "eMP"=eMP,"eMP_EUR"=eMP_EUR,"eMP_AFR"=eMP_AFR,"eMP_EA"=eMP_EA,"eMP_SA"=eMP_SA,"eMP_LATAM"=eMP_LATAM)
+  freqs_varios[[i]] <- c("ALFA_Total"=ALFA_Total, "ALFA_HTRZ"=ALFA_HTRZ, "ALFA_min"=ALFA_min, "ALFA_max"=ALFA_max, "eMP"=eMP,"eMP_EUR"=eMP_EUR,"eMP_AFR"=eMP_AFR,"eMP_EA"=eMP_EA,"eMP_SA"=eMP_SA,"eMP_LATAM"=eMP_LATAM)
   print(i)
 }
 
@@ -185,6 +186,7 @@ SNP_panel_table <- cbind(SNP_panel_table, todo_freqs)
 # ⚠️ WARNING: Ensembl REST API is rate-limited and unstable; includes retry logic.
 server_ensembl <- "https://rest.ensembl.org"
 list_mafs <- list()
+list_mafs_detail <- list()
 
 for (i in seq_len(nrow(SNP_panel_table))) {
   rsid <- SNP_panel_table$rs_id[i]
@@ -210,7 +212,7 @@ for (i in seq_len(nrow(SNP_panel_table))) {
   
   # Extract global MAF (ALFA total)
   alpha_total <- pops_df$frequency[pops_df$population == "ALFA:SAMN10492705"]
-  
+
   # Min/max MAF across sources
   min_ind <- which.min(pops_df$frequency)
   max_ind <- which.max(pops_df$frequency)
@@ -253,7 +255,7 @@ SNP_panel_table$max_source <- gsub("gnomADg", "c",SNP_panel_table$max_source)
 SNP_panel_table$MAF_max <- paste(SNP_panel_table$MAF_max, supsc(SNP_panel_table$max_source), sep = "")
 
 # table 2
-table_2 <- SNP_panel_table[,c("rs_id", "ALFA_Total", "ALFA_min", "ALFA_max","MAF_min","MAF_max","Fst", "eMP", "eMP_EUR","eMP_AFR","eMP_EA","eMP_SA","eMP_LATAM")]
+table_2 <- SNP_panel_table[,c("rs_id", "ALFA_Total", "ALFA_HTRZ", "ALFA_min", "ALFA_max","MAF_min","MAF_max","Fst", "eMP", "eMP_EUR","eMP_AFR","eMP_EA","eMP_SA","eMP_LATAM")]
 
 # reorder by chromosome
 table_2$rs_id <- factor(table_2$rs_id, levels = unique(table_1$rs_id))
@@ -269,7 +271,7 @@ write.table(table_2, file = "./tables/table_2.tsv",
 
 # ---- 5. TABLE 3: COHORT-SPECIFIC QC METRICS (HWE, HETEROZYGOSITY, qPCR CONCORDANCE) ----
 ### qPCR Genotyping ###
-Genotype_Matrix <- read.csv("data/Genotype Matrix Navarra.csv", sep=";")
+Genotype_Matrix <- read.csv("data/Genotype_qPCR.csv", sep=";")
 assays_fail <- c("EIF4ENIF1", "ZNRF3", "18s")
 
 # remove assays fail
@@ -296,15 +298,38 @@ SNP_panel_table <- read.csv2("data/SNP_panel_final.txt")
 VCF_panel_NAGENDATA <- VCF_panel_NAGENDATA[,-c(3,6,7,8,9)]
 VCF_panel_NAGENDATA <- merge(VCF_panel_NAGENDATA, SNP_panel_table[,c(1,3,5,15)], by.x=1:2 , by.y=2:3)
 
+# format sexual chromosomes
+# only fix based on rows 46:47, but fix only those 2 rows
+VCF_panel_NAGENDATA[VCF_panel_NAGENDATA[,1] == "chrX",5:ncol(VCF_panel_NAGENDATA)] <- lapply(
+  VCF_panel_NAGENDATA[VCF_panel_NAGENDATA[,1] == "chrX",5:ncol(VCF_panel_NAGENDATA)], function(x) {
+    x <- as.character(x)
+    if(any(!grepl("/", x, fixed = TRUE))) {
+      sub("/.*", "", x) # keep 1st allele. Use sub(".*/", "", x) to keep 2nd allele
+    } else {
+      x
+    }
+  }
+)
+
 #
-VCF_panel_formated <- as.data.frame(t(VCF_panel_NAGENDATA[,3:151]))
+VCF_panel_NAGENDATA[] <- lapply(VCF_panel_NAGENDATA, function(x){
+  if(is.character(x) || is.factor(x)){
+    gsub("|", "/", x, fixed = TRUE)
+  } else {
+    x
+  }
+})
+
+#
+VCF_panel_formated <- as.data.frame(t(VCF_panel_NAGENDATA[,5:155]))
 colnames(VCF_panel_formated) <- VCF_panel_NAGENDATA$rs_id
 
 # samples ?
-row.names(VCF_panel_formated)[!(row.names(VCF_panel_formated) %in% Genotype_Matrix_clean$`Sample.Assay`)]
+row.names(VCF_panel_formated)[!(row.names(VCF_panel_formated) %in% Genotype_Matrix_clean$Sample)]
 
 #
-VCF_panel_formated_xx <- VCF_panel_formated[Genotype_Matrix_clean$`Sample.Assay`,]
+VCF_panel_formated_xx <- VCF_panel_formated[Genotype_Matrix_clean$Sample,]
+VCF_panel_NAGENDATA$SYMBOL <- gsub("/", "|", VCF_panel_NAGENDATA$SYMBOL)
 
 #
 colnames(Genotype_Matrix_clean) <- c("Sample","ARID4A ","PPP1R1A | PDE1B","MEFV","RECQL4","COL4A2","PON3","NKX2-3","CYP24A1","VCAN | VCAN-AS1", "MYH7|MYH6", "PSCA", "GLP1R", "TDRD7", "CFLAR", "CNR2", "ALDH4A1", "GRM7", "TRPV3", "PLXNB3 | SRPK3", "| EXOSC3", "PKD1L1", "LTBP1", "PZP", "MUC5B", "EYS", "MYT1 | NPBWR2", "IRS2", "GPAM", "ETS1", "| ERAP2", "GABRA5", "MAGEB18 | ", "SLC26A1 | IDUA", "TSHZ1", "PYCR1 | MYADML2", "MYH14", "UTY", "MCM3AP", "OCA2", "DCC", "SHROOM3 | SHROOM3-AS1", "| PARL", "NDE1 | MYH11", "ZNF480 |", "RIPK4")
@@ -352,7 +377,16 @@ colnames(wgs_mask_table) <- Genotype_Matrix_clean$`Sample/Assay`
 qpcr_match <- list()
 for (i in 1:ncol(qpcr_mask_table)) {
   profile_qPCR <- qpcr_mask_table[,i]
-  qpcr_match[[i]] <- colMeans(as.matrix(wgs_mask_table) == profile_qPCR, na.rm = TRUE)
+  wgs_mat <- as.matrix(wgs_mask_table)
+  # same genotype at each locus
+  same_geno <- (wgs_mat == profile_qPCR)
+  # one is HET and the other is not (and they differ) -> partial sharing
+  one_het   <- ((wgs_mat == "HET") | (profile_qPCR == "HET")) & !same_geno
+  # IBS per locus: 1 if identical, 0.5 if one is het, 0 if opposite homozygotes
+  ibs_loci  <- ifelse(same_geno, 1, ifelse(one_het, 0.5, 0))
+  # exclude loci where either call is NA (pairwise, as before)
+  ibs_loci[is.na(wgs_mat) | is.na(profile_qPCR)] <- NA
+  qpcr_match[[i]] <- colMeans(ibs_loci, na.rm = TRUE)
 }
 
 #
@@ -360,7 +394,7 @@ pct_match_table <- as.data.frame(do.call("rbind", qpcr_match))
 
 # histogram of IBS values
 melted_pct_match <- reshape2::melt(as.matrix(pct_match_table))
-concordance_match <- melted_pct_match[melted_pct_match$Var1 == melted_pct_match$Var2,]
+concordance_match <- melted_pct_match[melted_pct_match$Var1 == gsub("V", "", melted_pct_match$Var2),]
 
 ### match por assay
 # match entre muestras!!!
@@ -382,12 +416,62 @@ assay_match_table$names.assay_match. <- factor(assay_match_table$names.assay_mat
 geno_success <- data.frame(rs_id =row.names(qpcr_mask_table)  ,success = 1-(rowSums(is.na(qpcr_mask_table)) / ncol(qpcr_mask_table)))
 assay_match_table <- as.data.frame(assay_match_table[order(assay_match_table[,2], decreasing = TRUE),])
 
+# calculate internal AF 
+VCF_panel_NAGENDATA_new <- VCF_panel_NAGENDATA[,c(156,5:155)]
+
+# remove duplicated samples "SAMPLE_56|SAMPLE_110"
+VCF_panel_NAGENDATA_new <- VCF_panel_NAGENDATA_new[,!grepl("SAMPLE_56|SAMPLE_110|SAMPLE_147", colnames(VCF_panel_NAGENDATA_new))]
+
+#
+VCF_panel_NAGENDATA_new$AF <- rowSums(apply(VCF_panel_NAGENDATA_new[,2:ncol(VCF_panel_NAGENDATA_new)], 2, str_count, pattern = "1")) /
+  (rowSums(apply(VCF_panel_NAGENDATA_new[,2:ncol(VCF_panel_NAGENDATA_new)], 2, str_count, pattern = "1")) + rowSums(apply(VCF_panel_NAGENDATA_new[,2:ncol(VCF_panel_NAGENDATA_new)], 2, str_count, pattern = "0")))
+
+# calculate HWE
+observed <- data.frame(A = rowSums(VCF_panel_NAGENDATA_new[,2:ncol(VCF_panel_NAGENDATA_new)] == "0"),
+                       B = rowSums(VCF_panel_NAGENDATA_new[,2:ncol(VCF_panel_NAGENDATA_new)] == "1"),
+                       AA = rowSums(VCF_panel_NAGENDATA_new[,2:ncol(VCF_panel_NAGENDATA_new)] == "0/0"),
+                       AB = rowSums(VCF_panel_NAGENDATA_new[,2:ncol(VCF_panel_NAGENDATA_new)] == "0/1"),
+                       BB = rowSums(VCF_panel_NAGENDATA_new[,2:ncol(VCF_panel_NAGENDATA_new)] == "1/1")
+)
+
+#
+expected <- data.frame(A = (1- VCF_panel_NAGENDATA_new$AF) * rowSums(observed[,1:2]),
+                       B = VCF_panel_NAGENDATA_new$AF * rowSums(observed[,1:2]),
+                       AA = ((1- VCF_panel_NAGENDATA_new$AF))^2 * rowSums(observed[,3:5]),
+                       AB = (VCF_panel_NAGENDATA_new$AF * (1- VCF_panel_NAGENDATA_new$AF) * 2) * rowSums(observed[,3:5]),
+                       BB = (VCF_panel_NAGENDATA_new$AF^2 * rowSums(observed[,3:5]))
+)
+
+# compute HWE
+VCF_panel_NAGENDATA_new$HWE <- NA
+for (i in 1:nrow(VCF_panel_NAGENDATA_new)){
+  if ((rowSums(observed[i,] > 0 )) == 3) {
+    VCF_panel_NAGENDATA_new$HWE[i] = HWChisq(unlist(as.vector(observed[i,3:5])))$pval
+  }
+  if ((rowSums(observed[i,] > 0 )) == 5) {
+    VCF_panel_NAGENDATA_new$HWE[i] = HWChisq(unlist(as.vector(observed[i,1:5])), cc=0,x.linked=TRUE)$pval
+  }
+}
+
+# obs / exp / HWE
+VCF_panel_NAGENDATA_new$obs_het <- observed$AB /149
+VCF_panel_NAGENDATA_new$exp_het <- expected$AB /149
+
+### metrics in our cohort
+QC_metrics <- VCF_panel_NAGENDATA_new[,c(1,150:153)]  %>% mutate_if(is.numeric, round, digits=3)
+QC_metrics_anot <- QC_metrics[,c(1,2,5,4,3)]
+QC_metrics_anot$rs_id <- factor(QC_metrics_anot$rs_id, levels = table_2$rs_id)
+QC_metrics_anot <- QC_metrics_anot[order(QC_metrics_anot$rs_id),]
+
 #
 QC_metrics_anot_full <- merge(QC_metrics_anot,geno_success,by.x="rs_id",by.y="rs_id",all.x=TRUE)
 QC_metrics_anot_full <- merge(QC_metrics_anot_full,assay_match_table,by.x="rs_id",by.y="names.assay_match.",all.x=TRUE)
 
 #
 QC_metrics_anot_x <- QC_metrics_anot_full[match(table_1$rs_id, QC_metrics_anot_full$rs_id),]
+QC_metrics_anot_x$HWE_BH <- p.adjust(QC_metrics_anot_x$HWE, method = "BH")
+QC_metrics_anot_x <- QC_metrics_anot_x[,c(1:5,8,6:7)]
+colnames(QC_metrics_anot_x) <- c("rs_id","AF","exp_het","obs_het","HWE","HWE_BH","qPCR_success","qPCR_concordance")
 
 # save table 
 # save table 2
@@ -397,3 +481,92 @@ write.table(QC_metrics_anot_x,
 png("./plots/supp_table3.png", width = 1480, height = 1280, res = 150)
 grid.table(QC_metrics_anot_x, rows = NULL)
 dev.off()
+
+# ---- 6. MAF AROUND THE GLOBE ----
+# Allele freqs populations
+server <- "https://rest.ensembl.org"
+list_mafs_plot <- list()
+
+for (i in 1:nrow(SNP_panel_table)) {
+  ext <- paste("/variation/human/", SNP_panel_table$rs_id[i] ,"?pops=1", sep = "")
+  r <- NULL
+  while( is.null(r)) {try({r <- GET(paste(server, ext, sep = ""), content_type("application/json"))
+  stop_for_status(r)})} # ensembl server very unstable. keep trying request until it works
+  subpops_MAF <- as.data.frame(fromJSON(toJSON(content(r)))$populations)
+  subpops_MAF <- subpops_MAF[grepl("1000GENOMES|gnomADg|ALFA", subpops_MAF$population),]
+  subpops_MAF <- subpops_MAF[subpops_MAF$allele == SNP_panel_table$ALT[i],c("population","frequency")]
+  # add rs_id
+  subpops_MAF$rs_ID <- rep(SNP_panel_table$rs_id[i], nrow(subpops_MAF))
+  #
+  list_mafs_plot[[i]] <- subpops_MAF
+  print(i)
+}
+
+mafs_across_the_globe <- do.call("rbind", list_mafs_plot)
+mafs_across_the_globe <- unnest(mafs_across_the_globe, c("population", "frequency",  "rs_ID"))
+
+
+# add color codes
+subpopulation_codes <- as.data.frame(rbind(c("1000GENOMES:phase_3:ACB", "African Caribbean in Barbados", "African"),
+                                           c("1000GENOMES:phase_3:ASW", "African Ancestry in Southwest US", "African"),
+                                           c("1000GENOMES:phase_3:ESN", "Esan in Nigeria", "African"),
+                                           c("1000GENOMES:phase_3:GWD", "Gambian in Western Division, The Gambia", "African"),
+                                           c("1000GENOMES:phase_3:LWK", "Luhya in Webuye, Kenya", "African"),
+                                           c("1000GENOMES:phase_3:MSL", "Mende in Sierra Leone", "African"),
+                                           c("1000GENOMES:phase_3:YRI", "Yoruba in Ibadan, Nigeria", "African"),
+                                           c("1000GENOMES:phase_3:CLM", "Colombian in Medellin, Colombia", "Latin_American"),
+                                           c("1000GENOMES:phase_3:MXL", "Mexican Ancestry in Los Angeles, California", "Latin_American"),
+                                           c("1000GENOMES:phase_3:PEL", "Peruvian in Lima, Peru", "Latin_American"),
+                                           c("1000GENOMES:phase_3:PUR",	"Puerto Rican in Puerto Rico", "Latin_American"),
+                                           c("1000GENOMES:phase_3:CDX", "Chinese Dai in Xishuangbanna, China", "East_Asian"),
+                                           c("1000GENOMES:phase_3:CHB", "Han Chinese in Bejing, China", "East_Asian"),
+                                           c("1000GENOMES:phase_3:CHS", "Southern Han Chinese, China", "East_Asian"),
+                                           c("1000GENOMES:phase_3:JPT", "Japanese in Tokyo, Japan", "East_Asian"),
+                                           c("1000GENOMES:phase_3:KHV", "Kinh in Ho Chi Minh City, Vietnam", "East_Asian"),
+                                           c("1000GENOMES:phase_3:CEU", "Utah residents with Northern and Western European ancestry", "European"),
+                                           c("1000GENOMES:phase_3:FIN", "Finnish in Finland", "European"),
+                                           c("1000GENOMES:phase_3:GBR", "British in England and Scotland", "European"),
+                                           c("1000GENOMES:phase_3:IBS", "Iberian populations in Spain", "European"),
+                                           c("1000GENOMES:phase_3:TSI", "Toscani in Italy", "European"),
+                                           c("1000GENOMES:phase_3:BEB", "Bengali in Bangladesh", "South_Asian"),
+                                           c("1000GENOMES:phase_3:GIH", "Gujarati Indian in Houston, TX", "South_Asian"),
+                                           c("1000GENOMES:phase_3:ITU", "Indian Telugu in the UK", "South_Asian"),
+                                           c("1000GENOMES:phase_3:PJL", "Punjabi in Lahore, Pakistan", "South_Asian"),
+                                           c("1000GENOMES:phase_3:STU", "Sri Lankan Tamil in the UK", "South_Asian"),
+                                           c("ALFA:SAMN10492695", "-" , "European"),
+                                           c("ALFA:SAMN10492696",	"-",	"African"),
+                                           c("ALFA:SAMN10492697",	"-",	"East_Asian"),
+                                           c("ALFA:SAMN10492698",	"-",	"African"),
+                                           c("ALFA:SAMN10492699",	"-",	"Latin_American"),
+                                           c("ALFA:SAMN10492700",	"-",	"Latin_American"),
+                                           c("ALFA:SAMN10492701",	"-",	"South_Asian"),
+                                           c("ALFA:SAMN10492702",	"-",	"South_Asian"),
+                                           c("ALFA:SAMN10492703",	"-",	"African"),
+                                           c("ALFA:SAMN10492704",	"-",	"South_Asian"),
+                                           c("gnomADg:afr",	"-",	"African"),
+                                           c("gnomADg:ami",	"-",	"European"),
+                                           c("gnomADg:amr",	"-",	"Latin_American"),
+                                           c("gnomADg:asj",	"-",	"Middle_East"),
+                                           c("gnomADg:eas",	"-",	"East_Asian"),
+                                           c("gnomADg:fin",	"-",	"European"),
+                                           c("gnomADg:mid",	"-",	"Middle_East"),
+                                           c("gnomADg:nfe",	"-",	"European"),
+                                           c("gnomADg:oth",	"-",	"Other"),
+                                           c("gnomADg:sas",	"-",	"South_Asian")))
+
+# 
+mafs_across_the_globe_color <- merge(mafs_across_the_globe, subpopulation_codes, by.x="population" ,by.y="V1", all.x = TRUE)
+mafs_across_the_globe_color$V3 <- factor(mafs_across_the_globe_color$V3, levels=c("African","East_Asian","Asian","South_Asian","Middle_East","European","Latin_American"))
+mafs_across_the_globe_color$rs_ID <- factor(mafs_across_the_globe_color$rs_ID, levels = unique(SNP_panel_table$rs_id))
+
+#
+mafs_across_the_globe_color = mafs_across_the_globe_color[!is.na(mafs_across_the_globe_color$V3),]
+
+#
+ggplot(mafs_across_the_globe_color, aes(x=rs_ID, y=frequency, color=V3, group=rs_ID)) +
+  geom_hline(yintercept = 0.5, colour="grey40", size=1) + ylim(0,1) +
+  geom_point(size=1,alpha=0.85, shape=19, position = position_jitterdodge(jitter.width = 0.25)) + 
+  geom_boxplot(alpha=0.25, outlier.shape = NA) + 
+  labs(x="", y="ALT allele frequency", title="Allele freqs across world populations (ALPHA|1000Genomes|gnomADg)") +
+  theme_minimal() + theme(axis.text.x = element_text(angle = 45,hjust=1))
+

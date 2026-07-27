@@ -465,4 +465,29 @@ ggplot(summary_snps, aes(x = filter, y = n_snps)) +
   labs(title = "SNP Filtering Pipeline Summary")
 dev.off()
 
+# ---- SUMMARY TABLE ----
+table_FILTERING <- data.frame(
+  `Filtering step` = c(
+    "dbSNP release 155",
+    "Coding region only",
+    "Biallelic",
+    "Exclude MNPs",
+    "Exclude complementary substitutions",
+    "Global MAF ALFA 0.4-0.6",
+    "Synonymous mutations only",
+    "Manual curation",
+    "qPCR optimization"
+  ),
+  `Number of SNPs` = c(14110460, 94925, 52556, 50300, 45678, 1965, 929, 47, 44),
+  `% remaining` = c(NA, 0.67, 55.36, 95.70, 90.81, 4.30, 47.27, 5.05, 93.61),
+  check.names = FALSE
+)
+
+# plot tabla with arrangeGrid ?
+grid.table(table_FILTERING, rows=NULL)
+
+# save
+png("./plots/filtering_summary.png", width = 480, height = 280)
+grid.table(table_FILTERING, rows=NULL)
+dev.off()
 
