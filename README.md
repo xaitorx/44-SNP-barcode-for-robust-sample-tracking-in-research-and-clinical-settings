@@ -1,5 +1,5 @@
 # 44-SNP-barcode-for-robust-sample-tracking-in-research-and-clinical-settings
-This repository contains materials and methods for the manuscript "A universal, TaqMan-compatible 44-SNP barcode for robust sample tracking in research and clinical settings". All data supporting the findings of this study are available in this repository.
+This repository contains materials and methods for the manuscript "A TaqMan-compatible 44-SNP barcode for robust sample tracking in research and clinical settings ". All data supporting the findings of this study are available in this repository.
 
 ## SCRIPTS
 - **[snp_panel_filtering_pipeline.R](https://github.com/xaitorx/44-SNP-barcode-for-robust-sample-tracking-in-research-and-clinical-settings-/blob/main/snp_panel_filtering_pipeline.R)**: Filters ~14M common SNPs down to 44 optimal markers using MAF, exonic location, functional impact, and population diversity criteria.
